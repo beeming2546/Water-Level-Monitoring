@@ -1,0 +1,118 @@
+#define BLYNK_PRINT Serial
+#include <ESP8266WiFi.h> 
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp8266.h>
+#include <TridentTD_LineNotify.h>
+
+// Define your Blynk authentication token, WiFi SSID, and password
+char auth[] = "cnNKiG5wSo1vHZ2PKIVpmTrQHWCC0z-1"; // Replace with your Blynk Auth Token
+char ssid[] = "HaKuRinz";        // Replace with your WiFi SSID
+char pass[] = "peen2663";    // Replace with your WiFi Password
+
+#define LINE_TOKEN "4HbyCuakHfWu8u8VLJZMKKRWpfDJcUyg0GP8L8Auta2" // Replace with your LINE Notify Token
+
+BlynkTimer timer;
+
+const int trig = D5;   
+const int echo = D6;  
+int MaxLevel = 18;
+
+int Level1 = (MaxLevel * 75) / 100;
+int Level2 = (MaxLevel * 65) / 100;
+int Level3 = (MaxLevel * 55) / 100;
+int Level4 = (MaxLevel * 45) / 100;
+int Level5 = (MaxLevel * 35) / 100;
+
+int lastLevel = -1; // Variable to store the last level state
+unsigned long lastNotifyTime = 0; // Variable to store the last notify time
+const unsigned long notifyInterval = 10000; // 2 minutes in milliseconds
+
+void setup() {
+  // Initialize serial communication and Blynk
+  Serial.begin(9600);
+  Blynk.begin(auth, ssid, pass, "elec.cmtc.ac.th", 8080);
+
+  // Setup LINE Notify
+  LINE.setToken(LINE_TOKEN);
+  LINE.notify("Water Level Monitoring Started");
+
+  // Initialize Ultrasonic Sensor
+  pinMode(trig, OUTPUT);
+  pinMode(echo, INPUT);
+
+  // Set timer for ultrasonic measurement
+  timer.setInterval(100L, ultrasonic);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+  delay(1000);
+}
+
+void ultrasonic() {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(4);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long t = pulseIn(echo, HIGH);
+  int distance = t / 29 / 2;
+
+  int blynkDistance = (distance - MaxLevel) * -1;
+  if (distance <= MaxLevel) {
+    Blynk.virtualWrite(V1, blynkDistance);
+    Serial.print("Distance: ");
+    Serial.print(blynkDistance);
+    Serial.println(" cm");
+    
+    // Determine current level state
+    int currentLevel = 0;
+    if (Level1 <= distance) {
+      currentLevel = 1; // Very low
+    } else if (Level2 <= distance) {
+      currentLevel = 2; // Low
+    } else if (Level3 <= distance) {
+      currentLevel = 3; // Medium
+    } else if (Level4 <= distance) {
+      currentLevel = 4; // High
+    } else if (Level5 >= distance) {
+      currentLevel = 5; // Full
+    }
+
+    // Send notification only if the level has changed and enough time has passed
+    if (currentLevel != lastLevel) {
+      unsigned long currentMillis = millis();
+      if (currentMillis - lastNotifyTime >= notifyInterval) {
+        lastNotifyTime = currentMillis; // Update the last notify time
+        lastLevel = currentLevel; // Update last level state
+
+        switch (currentLevel) {
+          case 1:
+            LINE.notify("Water level is very low!");
+            LINE.notify("Remaining: " + String(distance) + " cm. to full ");
+            break;
+          case 2:
+            LINE.notify("Water level is low!");
+            LINE.notify("Remaining: " + String(distance) + " cm. to full");
+            break;
+          case 3:
+            LINE.notify("Water level is medium.");
+            LINE.notify("Remaining: " + String(distance) + " cm. to full");
+            break;
+          case 4:
+            LINE.notify("Water level is high.");
+            LINE.notify("Remaining: " + String(distance) + " cm. to full");
+            break;
+          case 5:
+            LINE.notify("Water tank is full.");
+            LINE.notify("Remaining: " + String(distance) + " cm. to full");
+            break;
+        }
+      }
+    }
+
+  } else {
+    Blynk.virtualWrite(V1, 0);
+  }
+}
